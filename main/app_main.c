@@ -1,4 +1,13 @@
 #include "main.h"
+
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+//#include "WiFi.h"
+/*
+ *END START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+
 //#include "time.c"
 
 /*----------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -1369,6 +1378,167 @@ void Estrai_MAC_address(uint8_t addr5, uint8_t addr4, uint8_t addr3, uint8_t add
 	gap_complete_local_name[18] = hex2;
 	
 }
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
+{
+	switch (event->event_id) {
+	case SYSTEM_EVENT_STA_START:
+		esp_wifi_connect();
+		break;
+	case SYSTEM_EVENT_STA_GOT_IP:
+		xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+
+		break;
+	case SYSTEM_EVENT_STA_DISCONNECTED:
+		esp_wifi_connect();
+		xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+		break;
+	default:
+		break;
+	}
+	return ESP_OK;
+}
+
+static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
+{
+	esp_mqtt_client_handle_t client = event->client;
+	int msg_id;
+	// your_context_t *context = event->context;
+	/*
+	 *Per operare in questo modo, l’MQTT segue un paradigma di pubblicazione e sottoscrizione classico, definito “publish and subscribe”, ossia asincrono. Semplificando al massimo la questione: quando il nodo A vuole comunicare con il nodo B, non lo fa in modo sincrono, ovvero come se fosse una telefonata a cui occorre rispondere immediatamente. Al contrario, nel protocollo MQTT il messaggio viene pubblicato dal nodo A (publish) e viene ricevuto dai nodi che sottoscrivono la ricezione del messaggio stesso (subscribe). Sostanzialmente, dunque, con MQTT si disaccoppia fortemente la produzione dalla ricezione del messaggio stesso, anche da un punto di vista temporale*/
+	
+    switch(event->event_id) {
+	case MQTT_EVENT_CONNECTED:
+		ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+		msg_id = esp_mqtt_client_subscribe(client, topicNameW, 0); //contiene i messaggi provenienti dall app da inviare alla pompa
+		ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+		//con il subscribe il client aderisce alla ricezione dei messaggi con etichetta "/topic/qos0"
+		// qualunque client che pubblica con etichetta "/topic/qos0", i clienet che hanno subscribe "/topic/qos0" ricevono il messaggio
+			/*msg_id = esp_mqtt_client_subscribe(client, "/topic/qos1", 1);//prova per verificare l'evento MQTT_EVENT_UNSUBSCRIBED
+			ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+
+			msg_id = esp_mqtt_client_unsubscribe(client, "/topic/qos1");
+			ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);*/
+			msg_id = esp_mqtt_client_subscribe(client, topicNameR, 1); //contiene i messaggi provenienti dalla pompa da restituire all app
+		break;
+	case MQTT_EVENT_DISCONNECTED:
+		ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+		break;
+
+	case MQTT_EVENT_SUBSCRIBED:
+		//quando sono
+			ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+		msg_id = esp_mqtt_client_publish(client, topicNameR, "connected", 0, 0, 0);
+		//metodo publish:primoParametro:identificativo, (Topic Name ) stringa che identifica il messaggio da inviare, "data" è proprio il contenuto del messaggio da inviare
+	    
+			ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+		break;
+	case MQTT_EVENT_UNSUBSCRIBED:
+		ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+		break;
+	case MQTT_EVENT_PUBLISHED:
+		ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+		break;
+	case MQTT_EVENT_DATA:
+		ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+		//esempio
+		const char* found;
+		found = strstr(event->topic, topicNameW);
+		if (found != NULL)
+			msg_id = esp_mqtt_client_publish(client, topicNameR, "risposta", 0, 0, 0);
+		printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+		printf("DATA=%.*s\r\n", event->data_len, event->data);
+		break;
+	case MQTT_EVENT_ERROR:
+		ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+		break;
+	}
+	return ESP_OK;
+}
+
+static void wifi_init(void)
+{
+	tcpip_adapter_init();
+	wifi_event_group = xEventGroupCreate();
+	ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
+	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+	ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+	wifi_config_t wifi_config = {
+		.sta = {
+		.ssid = CONFIG_WIFI_SSID,
+		.password = CONFIG_WIFI_PASSWORD,
+	},
+	};
+	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+	ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+	ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
+	ESP_ERROR_CHECK(esp_wifi_start());
+	ESP_LOGI(TAG, "Waiting for wifi");
+	xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+}
+void getIPNetwork()
+{
+	tcpip_adapter_ip_info_t ip_info;
+	tcpip_adapter_dns_info_t dns_info;
+	tcpip_adapter_dhcp_status_t dhcp_info;
+
+	ESP_ERROR_CHECK(tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info));
+	tcpip_adapter_get_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info);
+	tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_STA, &dhcp_info);
+
+	
+}
+void getMACWiFi()
+{
+	uint8_t MAC_addr[6];
+	esp_wifi_get_mac(WIFI_IF_STA, MAC_addr);
+	
+}	
+void scanNetworkWiFi()
+{
+	wifi_scan_config_t scan_config = {
+		.ssid = 0,
+		.bssid = 0,
+		.channel = 0,
+		.show_hidden = true
+	};
+	uint16_t ap_num = MAX_APs;
+	wifi_ap_record_t ap_records[MAX_APs];
+	
+	ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+	for (int i = 0; i < ap_num; i++) {
+	}
+	
+}
+static void mqtt_app_start(void)
+{
+	const esp_mqtt_client_config_t mqtt_cfg = {
+		//.uri = "mqtts://iot.eclipse.org:8883",
+		 .uri = "mqtt://www.ermes-server.com:1883",
+		//.uri = "mqtts://www.ermes-server.com:8883",
+		    //.uri = "mqtts://95.110.157.172:8883",
+	    .keepalive = 10,
+		 //10 secondi il keep alive, verificare
+	    .username = "emecsrl",
+		.password = "emecsrl",
+		.client_id = serialNumber,
+		  //serialnumber dispositivo
+		.event_handle = mqtt_event_handler,
+		//.cert_pem = (const char *)iot_mosquitto_org_pem_start,
+	};
+
+	ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
+	esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+	esp_mqtt_client_start(client);
+}
+/*
+ *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
 
 /*-------------------------------------------------Main Program--------------------------------------------------------------*/
 void app_main()
@@ -1498,6 +1668,14 @@ void app_main()
 	Estrai_MAC_address(bt_mac_address[0], bt_mac_address[1], bt_mac_address[2], bt_mac_address[3], bt_mac_address[4], bt_mac_address[5] + 0x02);
 	
 	
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+	wifi_init();
+	mqtt_app_start();
+/*
+ *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
 	
 	//inserisco mac-address nel pacchetto di advertising
 //	spp_adv_data[27] = bt_mac_address[0];  			//OUI 1st byte

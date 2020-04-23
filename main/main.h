@@ -42,13 +42,25 @@
 /*
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
-/*
+#include "freertos/event_groups.h"
+#include "esp_event_loop.h"
+
 #include "esp_wifi.h"
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "mqtt_client.h"
-*/
+
+static EventGroupHandle_t wifi_event_group;
+const static int CONNECTED_BIT = BIT0;
+static const char *TAG = "MQTTS_PRISMA";
+static const char *serialNumber = "00000000000000000";
+static const char *topicNameW = "/00000000000000000/appW";
+static const char *topicNameR = "/00000000000000000/appR";
+
+
+#define MAX_APs 20
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020
   */
+
