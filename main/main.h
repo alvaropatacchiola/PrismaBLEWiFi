@@ -17,6 +17,7 @@
 
 #include "esp_log.h"
 
+
 #include "nvs.h"
 #include "nvs_flash.h"
 
@@ -39,7 +40,7 @@
 //#include "soc/timer_group_struct.h"
 
 /*
- *START Alvaro Patacchiola WIFi prisma 23/04/2020
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
 /*
 #include "esp_wifi.h"
