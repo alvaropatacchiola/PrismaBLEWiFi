@@ -379,7 +379,15 @@ static bool Interpreta_frame_uart(uint8_t byte_num0, uint8_t byte_num1, uint8_t 
 	
 	if ((byte_num0 == 0xFF) && (byte_num3 == 0xFE))
 	{
-		if ((byte_num1 >= 0x30) && (byte_num1 <= 0x3F))
+		/*
+		 *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+		 */
+		
+		if ((byte_num1 >= 0x30) && (byte_num1 <= 0x4F))//I COMANDI 0X30 TO 0X3F SONO PER BLE(ANGELO) 0X40 TO 0X4F SONO WIFI(ALVARO)
+		/*
+		 *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+	    */
+			
 		{
 			is_int_frame = true;
 		}
@@ -418,6 +426,28 @@ static bool Verifica_Checksum(uint16_t frame_len, uint8_t frame[frame_len]) {
 	
 	return is_valid_chksm;
 }
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+
+static void Decodifica_Comando_wifi(uint8_t * arrayTemp)
+{
+	uint16_t cmd_code = 0x0000;
+	cmd_code += arrayTemp[1];
+	cmd_code <<= 8;
+	cmd_code += arrayTemp[2];
+	switch (cmd_code) {
+		case 0x4000:
+			printf("CMD 0x4000 Response \n");
+		break;
+		case 0x4100:
+			printf("CMD 0x4100 Response \n");
+			break;
+	}
+}
+/*
+ *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
 
 static void Decodifica_Comando(uint8_t byte_num1, uint8_t byte_num2, uint8_t byte_num4, uint8_t byte_num5, uint8_t byte_num6, uint8_t byte_num7) {	
 	
@@ -596,6 +626,10 @@ static void spp_uart_init(void)
 	uart_driver_install(UART_NUM_2, 2048, 0, 0, NULL, 0);
 	//Set UART mode
 	uart_set_mode(UART_NUM_2, UART_MODE_UART); 
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+
 }
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
@@ -912,8 +946,17 @@ void task_principale(void *pvParameters)
 					//else {
 					//	;
 					//} //status_ack = true; }																
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+					if (temp[1] < 0x3F)
+						Decodifica_Comando(temp[1], temp[2], temp[4], temp[5], temp[6], temp[7]);      		//decodifica il comando
+					else
+						Decodifica_Comando_wifi(temp);       		//decodifica il comando
+/*
+ *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
 					
-					Decodifica_Comando(temp[1], temp[2], temp[4], temp[5], temp[6], temp[7]);      		//decodifica il comando
 				}
 				else {
 					if (status_ack == false) { uart_write_req_id = 2; }	
@@ -1043,6 +1086,10 @@ void task_lampeggio_led(void *pvParameters)
 	while (1)
 	{
 		//lampeggio led traffico bluetooth
+/*
+ *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
+#ifndef debug		
 		if(led_ble_on == true)
 		{
 			gpio_set_level(LED_BLE, 1);
@@ -1052,6 +1099,10 @@ void task_lampeggio_led(void *pvParameters)
 		{
 			gpio_set_level(LED_BLE, 0);
 		}
+#endif		
+/*
+*END Alvaro Patacchiola WIFi prisma 23/04/2020 p
+*/
 		
 		//lampeggio led traffico uart
 		if(led_uart_on == true)

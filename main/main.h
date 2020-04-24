@@ -58,8 +58,11 @@ static const char *serialNumber = "00000000000000000";
 static const char *topicNameW = "/00000000000000000/appW";
 static const char *topicNameR = "/00000000000000000/appR";
 
-
+static void Decodifica_Comando_wifi(uint8_t *);
 #define MAX_APs 20
+#define debug // decommentare per hw prisma, usato per testarlo sul hw MDWifi con rs485
+//uso il pin LED_BLE per gestire la direzione
+
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020
   */
