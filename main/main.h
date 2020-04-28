@@ -1,4 +1,3 @@
-#pragma once
 
 #include <stdint.h>
 #include <string.h>
@@ -50,6 +49,35 @@
 #include "lwip/dns.h"
 #include "lwip/netdb.h"
 #include "mqtt_client.h"
+#include "tcpip_adapter.h"
+#include "esp_smartconfig.h"
+#include "esp_wpa2.h"
+#include "esp_err.h"
+
+
+static wifi_config_t wifi_config = {
+	.sta = {
+	.ssid = "",
+	.password = "",
+},
+};
+typedef struct {
+	uint8_t mode;
+	uint32_t ip;
+	uint32_t subnet;
+	uint32_t gateway;
+	uint32_t dns;
+}ip_;
+typedef  union  bit32
+{
+	uint32_t value;
+	struct {
+		uint8_t ad_low;
+		uint8_t ad_low1;
+		uint8_t ad_high;
+		uint8_t ad_high1;
+	}BIT;
+} bit32_  ;
 
 static EventGroupHandle_t wifi_event_group;
 const static int CONNECTED_BIT = BIT0;
@@ -58,11 +86,24 @@ static const char *serialNumber = "00000000000000000";
 static const char *topicNameW = "/00000000000000000/appW";
 static const char *topicNameR = "/00000000000000000/appR";
 
+static ip_ ip;
+
 static void Decodifica_Comando_wifi(uint8_t *);
 #define MAX_APs 20
 #define debug // decommentare per hw prisma, usato per testarlo sul hw MDWifi con rs485
-//uso il pin LED_BLE per gestire la direzione
 
+
+void scanNetworkWiFi(uint8_t *);
+uint8_t calcolaChecksum(uint8_t );
+void getIPNetwork(uint8_t *);
+void put32(uint32_t, uint8_t *);
+void setInitNetwork();
+void setSSID(uint8_t *);
+void writeEEpromData();
+void readEEpromData();
+//uso il pin LED_BLE per gestire la direzione
+static void wifi_connect(void);
+	
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020
   */

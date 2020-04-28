@@ -1,0 +1,20 @@
+===========================================================================================================================
+//COMANDO DI RICHIESTA ELENCO RETI
+0X40
+FF 40 00 FE 00 FF BE  // COMANDO DI RICHIESTA ELENCO RETI 0X40
+0xff 0x40 0x00 0xfe Ap 0x00 rss1 auth Ap1 0x00 rss1 auth .. .. .. .. 0xFF XX // STRUTTURA DEL EMSSAGGIO DI RISPOSTA
+ff 40 00 fe 00 48 03 41 53 49 41 00 4e 03 6f 73 70 69 74 65 5f 61 73 69 61 00 53 03 ff a3 // ESEMPIO MESSAGGIO DI RISPOSTA
+===========================================================================================================================
+//COMANDO DI RICHIESTA INFORMAZIONE DI CONNESSIONE IP -SUBNETMASK - GATEWAY - DNS
+0X41
+FF 41 00 FE 00 FF BF  // COMANDO DI RICHIESTA PARAMETRI RETI 0X41
+ff 41 00 fe Type Ip4 Ip3 Ip2 Ip1 SNM4 SNM3 SNM2 SNM1 GTW4 GTW3 GTW2 GTW1 DNS4 DNS3 DNS2 DNS1 ff ef // type:1 DHCP mode 0: static mode  IP: indirizzo ip SNM: subnet mask GTW: Gateway DNS: dns
+ff 41 00 fe 01 c0 a8 01 55 ff ff ff 00 c0 a8 01 fb 08 08 08 08 ff ef //esempio, Dhcp OK, IP:192.168.1.85 SubNet: 255.255.255.0 Gateway: 192.168.1.251 dns: 8.8.8.8
+===========================================================================================================================
+//COMANDO DI IMPOSTAZIONE SSID E PASSWORD SE PRESENTE
+0X42
+FF 42 00 FE SSID 00 PWD 00 FF XX // ssid: stringa alfanumerica contenete SSID ap, PWD: eventuale password se la rete lo necessita
+FF 42 00 FE 41 53 49 41 00 73 61 6d 65 32 36 30 30 00 FF B8  //ESEMPIO IMPOSTAZIONE SSID:ASIA PWD:same2600
+===========================================================================================================================
+
+

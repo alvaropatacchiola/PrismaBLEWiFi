@@ -90,6 +90,15 @@ static uint16_t uart_write_req_id	= 0;
 static uint8_t  app_uart_write_value[150];
 static uint16_t app_uart_write_len  = 0;
 
+/*
+ *START Alvaro Patacchiola WIFi prisma 27/04/2020 p
+*/
+#define sizeUartWiFi 250
+static uint8_t  uart_wifi_status[sizeUartWiFi];
+/*
+ *STOP Alvaro Patacchiola WIFi prisma 27/04/2020 p
+*/
+
 
 // config adv params
 static esp_ble_adv_params_t spp_adv_params = {
@@ -433,22 +442,49 @@ static bool Verifica_Checksum(uint16_t frame_len, uint8_t frame[frame_len]) {
 static void Decodifica_Comando_wifi(uint8_t * arrayTemp)
 {
 	uint16_t cmd_code = 0x0000;
+	uint8_t lunghezzaMessaggio = 0;
+	memset(uart_wifi_status, 0, sizeUartWiFi);
+	
 	cmd_code += arrayTemp[1];
 	cmd_code <<= 8;
 	cmd_code += arrayTemp[2];
+	uart_wifi_status[0] = 0xFF;
+	uart_wifi_status[1] = arrayTemp[1];
+	uart_wifi_status[2] = arrayTemp[2];
+	uart_wifi_status[3] = 0xFE;
+	lunghezzaMessaggio = 4;
 	switch (cmd_code) {
-		case 0x4000:
-			printf("CMD 0x4000 Response \n");
+		case 0x4000://scansione delle reti wifi
+			scanNetworkWiFi(&lunghezzaMessaggio);
 		break;
-		case 0x4100:
-			printf("CMD 0x4100 Response \n");
-			break;
+		case 0x4100://lettura parametri di rete
+			getIPNetwork(&lunghezzaMessaggio);
+		break;
+		case 0x4200://impostazione AP
+			setSSID(arrayTemp);
+		break;
+
 	}
+	uart_write_req_id = 0x10; //codici di risposta del wifi
+	uart_wifi_status[lunghezzaMessaggio] = 0xFF;
+	uart_wifi_status[lunghezzaMessaggio + 1] = calcolaChecksum(lunghezzaMessaggio);
 }
+
+uint8_t calcolaChecksum(uint8_t lunghezzaMessaggio)
+{
+	uint8_t xorResult = 0;
+	
+	for (uint8_t i = 0; i <= lunghezzaMessaggio; i++) {
+		xorResult = xorResult ^ uart_wifi_status[i];
+	}
+	return xorResult;
+	
+}
+
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
-
+	
 static void Decodifica_Comando(uint8_t byte_num1, uint8_t byte_num2, uint8_t byte_num4, uint8_t byte_num5, uint8_t byte_num6, uint8_t byte_num7) {	
 	
 	uint16_t cmd_code = 0x0000;
@@ -933,8 +969,9 @@ void task_principale(void *pvParameters)
 		{
 			uart_flush_input(UART_NUM_2); 																//svuoto buffer rx
 			led_uart_blink();  																		    //segnalo lettura su uart
-			
+		
 			esp32_cmd = Interpreta_frame_uart(temp[0], temp[1], temp[3]);  								//esp32_cmd=1 se comando interno per modulo BT, esp32_cmd=0 se frame da scambiare con l'App
+			printf("Dato Ricevuto %d\n", len);
 			
 			if(esp32_cmd == true)	 																	//se è un comando interno
 			{																		
@@ -949,6 +986,7 @@ void task_principale(void *pvParameters)
 /*
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
+					ESP_LOGI(TAG, "dATO RICEVUTO");
 					if (temp[1] < 0x3F)
 						Decodifica_Comando(temp[1], temp[2], temp[4], temp[5], temp[6], temp[7]);      		//decodifica il comando
 					else
@@ -1066,7 +1104,17 @@ void task_principale(void *pvParameters)
 		{
 			if (status_ack == false)
 			{
-				uart_write_req_id = 8;
+				/*
+				 *START Alvaro Patacchiola WIFi prisma 27/04/2020 p
+				 */
+				
+				//uart_write_req_id = 8;
+				
+				//COMMENTATO DA ALVARO PATACCHIOLA PER CERCARE DI INVIARE LE RISPOSTE DEL WIFI
+				/*
+				 *END Alvaro Patacchiola WIFi prisma 27/04/2020 p
+				 */
+
 			}	
 			//else
 			//{
@@ -1125,16 +1173,27 @@ void task_lampeggio_led(void *pvParameters)
 void task_scrittura_uart(void *pvParameters)
 {
 	uint16_t tick = 0;
+	
 	while (1)
 	{
 		tick += 1;
 		if (tick >= 40)
 		{																																																					
+
 			if (app_uart_write_req == false)
 			{
+				/*
+				*START Alvaro Patacchiola WIFi prisma 27/04/2020 p
+				*/
+				printf("invio rs 485 %d\n", uart_write_req_id);
+				/*
+				 *END Alvaro Patacchiola WIFi prisma 27/04/2020 p
+				*/
+
 				if (uart_write_req_id == 0)
 				{
 					;
+					
 				}	
 				else if (uart_write_req_id == 1)
 				{
@@ -1170,7 +1229,24 @@ void task_scrittura_uart(void *pvParameters)
 				}
 				else
 				{
-					uart_write_req_id = 0;
+					/*
+					 *START Alvaro Patacchiola WIFi prisma 27/04/2020 p
+					*/
+					if (uart_write_req_id == 0x10)
+					{
+						ESP_LOGI(TAG, "485 event send Alvaro");
+						gpio_set_level(LED_BLE, 1);
+						Invia_stato_pm1wifi(uart_wifi_status, sizeof(uart_wifi_status), false); uart_write_req_id = 0;
+						vTaskDelay(200);  //
+						gpio_set_level(LED_BLE, 0);
+
+					}
+					else
+						uart_write_req_id = 0;
+					/*
+					 *STOP Alvaro Patacchiola WIFi prisma 27/04/2020 p
+					*/
+					
 				}
 			}
 			else 
@@ -1509,8 +1585,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 	}
 	return ESP_OK;
 }
-
-static void wifi_init(void)
+void  wifi_init(void)
 {
 	tcpip_adapter_init();
 	wifi_event_group = xEventGroupCreate();
@@ -1518,30 +1593,141 @@ static void wifi_init(void)
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 	ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-	wifi_config_t wifi_config = {
+	
+}
+
+static void wifi_connect(void)
+{
+	
+	setInitNetwork(); //inizializzo le modalita di lavoro della rete, static o dhcp
+	
+	/*wifi_config_t wifi_config = {
 		.sta = {
 		.ssid = CONFIG_WIFI_SSID,
 		.password = CONFIG_WIFI_PASSWORD,
 	},
-	};
+	};*/
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+	
+	//ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 	ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
 	ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
 	ESP_ERROR_CHECK(esp_wifi_start());
 	ESP_LOGI(TAG, "Waiting for wifi");
 	xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
 }
-void getIPNetwork()
+void getIPNetwork(uint8_t * lunghezzTemp)
 {
 	tcpip_adapter_ip_info_t ip_info;
 	tcpip_adapter_dns_info_t dns_info;
 	tcpip_adapter_dhcp_status_t dhcp_info;
-
+	
 	ESP_ERROR_CHECK(tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info));
 	tcpip_adapter_get_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info);
 	tcpip_adapter_dhcpc_get_status(TCPIP_ADAPTER_IF_STA, &dhcp_info);
 
-	
+	printf("IP Address:  %s\n", ip4addr_ntoa(&ip_info.ip));
+	printf("Subnet mask: %s\n", ip4addr_ntoa(&ip_info.netmask));
+	printf("Gateway:     %s\n", ip4addr_ntoa(&ip_info.gw));
+	printf("DNS:     %s\n", ip4addr_ntoa(&dns_info.ip));
+	printf("ip:     %X\n", (ip_info.ip.addr));
+	/*
+ formato risposta alla scansione rete
+ 0xff 0x41 0x00 0xfe mode 0x00 rss1 auth Ap1 0x00 rss1 auth .. .. .. .. 0xFF XX
+ *ff 40 00 fe 00 48 03 41 53 49 41 00 4e 03 6f 73 70 69 74 65 5f 61 73 69 61 00 53 03 ff a3 // ESEMPIO RISPOSTA
+ **/
+
+	if (dhcp_info == TCPIP_ADAPTER_DHCP_STARTED)// sta in modalida dhcp
+	{
+		uart_wifi_status[*lunghezzTemp] = 0;
+	}
+	else// sta in modalida static 
+	{
+		uart_wifi_status[*lunghezzTemp] = 1;
+	}
+	*lunghezzTemp = *lunghezzTemp + 1;
+	put32(ip_info.ip.addr, &*lunghezzTemp);
+	put32(ip_info.netmask.addr, & *lunghezzTemp);
+	put32(ip_info.gw.addr, & *lunghezzTemp);
+	put32(dns_info.ip.u_addr.ip4.addr, & *lunghezzTemp);
+}
+
+void put32(uint32_t dataIn, uint8_t * lunghezzTemp)
+{
+	bit32_ ipNum;
+	ipNum.value = dataIn;
+	uart_wifi_status[*lunghezzTemp] = ipNum.BIT.ad_low;
+	*lunghezzTemp = *lunghezzTemp + 1;
+	uart_wifi_status[*lunghezzTemp] = ipNum.BIT.ad_low1;
+	*lunghezzTemp = *lunghezzTemp + 1;
+	uart_wifi_status[*lunghezzTemp] = ipNum.BIT.ad_high;
+	*lunghezzTemp = *lunghezzTemp + 1;
+	uart_wifi_status[*lunghezzTemp] = ipNum.BIT.ad_high1;
+	*lunghezzTemp = *lunghezzTemp + 1;
+
+}
+void readEEpromData()
+{
+	//lettura dati eeprom
+	esp_err_t err;
+	printf("Opening Non-Volatile Storage (NVS) handle... ");
+	nvs_handle my_handle;
+	err = nvs_open("storage", NVS_READONLY, &my_handle);
+
+	if (err != ESP_OK) {
+		printf("Error (%d) opening NVS handle!\n", err);
+	}
+	else {
+		printf("Done\n");
+		
+		size_t size = sizeof(wifi_config.sta.ssid);
+		err = nvs_get_blob(my_handle, "dst_ssid_addr", wifi_config.sta.ssid, &size);
+		size = sizeof(wifi_config.sta.password);
+		nvs_get_blob(my_handle, "dst_pass_addr", wifi_config.sta.password, &size);
+		size = sizeof(ip);
+		nvs_get_blob(my_handle, "dst_ser_ip", &ip, &size);
+
+
+	}
+	// Close
+	nvs_close(my_handle);
+}
+void writeEEpromData()
+{
+	//lettura dati eeprom
+
+	esp_err_t err;
+	nvs_handle my_handle;
+	printf("Opening Non-Volatile Storage (NVS) handle... ");
+
+	err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	//nvs_erase_all(&my_handle);
+	if(err != ESP_OK) {
+		printf("Error (%d) opening NVS handle!\n", err);
+	} else {
+		printf("Done\n");
+		size_t size = sizeof(wifi_config.sta.ssid);
+		nvs_set_blob(my_handle, "dst_ssid_addr", wifi_config.sta.ssid, size);
+
+		printf("Committing updates in NVS ... ");
+		err = nvs_commit(my_handle);
+		printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+		nvs_close(my_handle);
+
+		nvs_open("storage", NVS_READWRITE, &my_handle);
+		size_t size1 = sizeof(wifi_config.sta.password);
+		nvs_set_blob(my_handle, "dst_pass_addr", wifi_config.sta.password, size1);
+
+	}
+
+	printf("Committing updates in NVS ... ");
+	err = nvs_commit(my_handle);
+	printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+
+	// Close
+	nvs_close(my_handle);
+
 }
 void getMACWiFi()
 {
@@ -1549,7 +1735,7 @@ void getMACWiFi()
 	esp_wifi_get_mac(WIFI_IF_STA, MAC_addr);
 	
 }	
-void scanNetworkWiFi()
+void scanNetworkWiFi(uint8_t * lunghezzTemp)
 {
 	wifi_scan_config_t scan_config = {
 		.ssid = 0,
@@ -1559,12 +1745,90 @@ void scanNetworkWiFi()
 	};
 	uint16_t ap_num = MAX_APs;
 	wifi_ap_record_t ap_records[MAX_APs];
-	
+	const char* found;
+	printf("Start scanning...");
 	ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
 	ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_num, ap_records));
+	printf("Found %d access points:\n", ap_num);
+	/*
+	 *formato risposta alla scansione rete
+	 *0xff 0x40 0x00 0xfe Ap 0x00 rss1 auth Ap1 0x00 rss1 auth .. .. .. .. 0xFF XX
+	 *ff 40 00 fe 00 48 03 41 53 49 41 00 4e 03 6f 73 70 69 74 65 5f 61 73 69 61 00 53 03 ff a3 // ESEMPIO RISPOSTA
+	 **/
+	
 	for (int i = 0; i < ap_num; i++) {
+		for (int j = 0; j < strlen((char *)ap_records[i].ssid); j++) {
+			uart_wifi_status[*lunghezzTemp] = ap_records[i].ssid[j];
+			*lunghezzTemp = *lunghezzTemp + 1;
+			printf("costruzione stringa  %d \n", *lunghezzTemp);
+		}
+		uart_wifi_status[*lunghezzTemp] = 0; // zero di suddivisione tra la stringa del AP
+		*lunghezzTemp = *lunghezzTemp + 1;
+		uart_wifi_status[*lunghezzTemp] = abs(ap_records[i].rssi);   // valore assoluto del livello del segale tolgo il meno
+		*lunghezzTemp = *lunghezzTemp + 1;
+		uart_wifi_status[*lunghezzTemp] = ap_records[i].authmode;     // tipo di autenticazione della rete 
+		*lunghezzTemp = *lunghezzTemp + 1;		 /**0 - < authenticate mode : open */		 /**1 - < authenticate mode : WEP */		 /** 2 -< authenticate mode : WPA_PSK */		 /** 3 - < authenticate mode : WPA2_PSK */		 /** 4 - < authenticate mode : WPA_WPA2_PSK */		 /**5 - < authenticate mode : WPA2_ENTERPRISE */		 /* 6 */
 	}
 	
+}
+void setInitNetwork()
+{
+	ESP_LOGI(TAG, "EEPROM START\n");
+
+	if (ip.mode == 0) {// DHCP MODE
+		ESP_LOGI(TAG, "system dynamic");
+		tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_STA);   
+
+	}
+	else {
+		//mode static
+		ESP_LOGI(TAG, "system static:%d\n", ip.ip);
+		tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);  
+
+		tcpip_adapter_ip_info_t ipInfo;
+		tcpip_adapter_dns_info_t dns_info;
+		ipInfo.ip.addr = ip.ip;
+		ipInfo.netmask.addr = ip.subnet;
+		ipInfo.gw.addr = ip.gateway;
+		tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
+
+		dns_info.ip.u_addr.ip4.addr = ip.dns;
+		//dns
+		tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info);
+
+	}
+
+}
+void setSSID(uint8_t * arrayTemp)
+{
+	
+	uint8_t i = 4;//posizione primo carattere della stringa wifi
+	uint8_t j = 0;
+	 
+	memset(wifi_config.sta.ssid, 0, sizeof(wifi_config.sta.ssid));
+	memset(wifi_config.sta.password, 0, sizeof(wifi_config.sta.password));
+	/*
+	0X42
+	FF 42 00 FE SSID 00 PWD 00 FF XX // ssid: stringa alfanumerica contenete SSID ap, PWD: eventuale password se la rete lo necessita
+	FF 42 00 FE 41 53 49 41 00 73 61 6d 65 32 36 30 30 00 FF B8  //ESEMPIO IMPOSTAZIONE SSID:ASIA PWD:same2600
+	*/
+	while ((arrayTemp[i] != 0)&&(j < 32)) {
+		wifi_config.sta.ssid[j] = arrayTemp[i];
+		i++;j++;
+	}
+	i++;
+	j = 0;
+	while ((arrayTemp[i] != 0)&&(j < 64)) {
+		wifi_config.sta.password[j] = arrayTemp[i];
+		i++; j++;
+	}
+	
+	printf("%32s | %62s |\n", (char *)wifi_config.sta.ssid, (char *)wifi_config.sta.password);
+	
+	writeEEpromData();
+	ESP_ERROR_CHECK(esp_wifi_disconnect());
+	wifi_connect();
+
 }
 static void mqtt_app_start(void)
 {
@@ -1623,7 +1887,7 @@ void app_main()
 	PrintfsnXLCD(BuffDisp.Line1, sizeof(BuffDisp.Line1));
 	*/
 	
-	//printf("Inizializzo I/O ...\n");
+	printf("Inizializzo I/O ...\n");
 	gpio_set_direction(LED_UART, GPIO_MODE_OUTPUT); 									//configuro GPIO led uart
 	gpio_set_level(LED_UART, 0); 													//forzo a 0
 	gpio_set_direction(LED_BLE, GPIO_MODE_OUTPUT); 									//configuro GPIO led ble
@@ -1722,7 +1986,11 @@ void app_main()
 /*
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
+	readEEpromData();//leggo i paramtri della rete wifi impostati nella eeprom
+	//setInitNetwork();//inizializzo le modalita di lavoro della rete, static o dhcp
+	
 	wifi_init();
+	wifi_connect();
 	mqtt_app_start();
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
@@ -1806,8 +2074,16 @@ void app_main()
 	esp_ble_gatts_app_register(ESP_SPP_APP_ID);
 	//printf("Inizializzo Bluetooth -> OK\n");	
 	
-	//printf("Avvio i tasks ...\n");
-	xTaskCreate(task_principale, "task principale", 2048, NULL, 8, NULL);
+	printf("Avvio i tasks ...\n");
+	/*
+	 *START Alvaro Patacchiola WIFi prisma 27/04/2020 p
+	 */
+	//xTaskCreate(task_principale, "task principale", 2048, NULL, 8, NULL);
+	xTaskCreate(task_principale, "task principale", 4096, NULL, 8, NULL);
+	/*
+	 *END Alvaro Patacchiola WIFi prisma 27/04/2020 p
+	 */
+
 	xTaskCreate(task_lampeggio_led, "task_lampeggio_led", 2048, NULL, 4, NULL);
 	xTaskCreate(task_scrittura_uart, "task_scrittura_uart", 2048, NULL, 7, NULL);
 	//printf("Avvio i tasks -> OK\n");
