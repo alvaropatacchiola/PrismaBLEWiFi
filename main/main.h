@@ -54,6 +54,7 @@
 #include "esp_wpa2.h"
 #include "esp_err.h"
 
+enum enum_Status{mqttDisconnected = 0, mqttConnected = 1};
 
 static wifi_config_t wifi_config = {
 	.sta = {
@@ -82,11 +83,19 @@ typedef  union  bit32
 static EventGroupHandle_t wifi_event_group;
 const static int CONNECTED_BIT = BIT0;
 static const char *TAG = "MQTTS_PRISMA";
-static const char *serialNumber = "00000000000000000";
-static const char *topicNameW = "/00000000000000000/appW";
-static const char *topicNameR = "/00000000000000000/appR";
+//static const char *serialNumber = "00000000000000000";
+uint8_t serialNumber[18] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1',0};
+uint8_t macAddress[18] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+//static const char *topicNameW = "/appW";
+char topicNameW[30] = { 0 };
+//static const char *topicNameR = "/appR";
+char topicNameR[30] = { 0 };
+static const char *topicNameMail = "/00000000000000000/appMail";
+const int WIFI_CONNECTED_BIT = BIT0;
 
 static ip_ ip;
+esp_mqtt_client_handle_t client;
+uint8_t statusConnectionMQTT;	
 
 static void Decodifica_Comando_wifi(uint8_t *);
 #define MAX_APs 20
@@ -96,14 +105,22 @@ static void Decodifica_Comando_wifi(uint8_t *);
 void scanNetworkWiFi(uint8_t *);
 uint8_t calcolaChecksum(uint8_t );
 void getIPNetwork(uint8_t *);
+void setIPNetwork(uint8_t *);
 void put32(uint32_t, uint8_t *);
+uint32_t get32(uint8_t *, uint8_t *);
+
 void setInitNetwork();
 void setSSID(uint8_t *);
 void writeEEpromData();
+void writeEEpromIP();
 void readEEpromData();
 //uso il pin LED_BLE per gestire la direzione
 static void wifi_connect(void);
+void getSSID(uint8_t * );
+void getConnectionInfo(uint8_t *);
+void setSerialNumber(uint8_t *);
 	
+
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020
   */

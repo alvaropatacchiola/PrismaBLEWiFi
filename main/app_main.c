@@ -463,6 +463,18 @@ static void Decodifica_Comando_wifi(uint8_t * arrayTemp)
 		case 0x4200://impostazione AP
 			setSSID(arrayTemp);
 		break;
+		case 0x4300://restituisce l'attuale AP o SSID impostato
+			getSSID(&lunghezzaMessaggio);
+		break;
+		case 0x4400://restituisce il livello del segnale wifi e dello stato di connessione al broker
+			getConnectionInfo(&lunghezzaMessaggio);
+		break;
+		case 0x4500://impostazione dei parametri IP, statico o DHCP, ip, subnetmask, gateway e dns
+			setIPNetwork(arrayTemp);
+		break;
+		case 0x4600://lettura del serialNumber dalla pompa
+			setSerialNumber(arrayTemp);
+		break;
 
 	}
 	uart_write_req_id = 0x10; //codici di risposta del wifi
@@ -1509,26 +1521,6 @@ void Estrai_MAC_address(uint8_t addr5, uint8_t addr4, uint8_t addr3, uint8_t add
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
 
-static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
-{
-	switch (event->event_id) {
-	case SYSTEM_EVENT_STA_START:
-		esp_wifi_connect();
-		break;
-	case SYSTEM_EVENT_STA_GOT_IP:
-		xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
-
-		break;
-	case SYSTEM_EVENT_STA_DISCONNECTED:
-		esp_wifi_connect();
-		xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
-		break;
-	default:
-		break;
-	}
-	return ESP_OK;
-}
-
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
 	esp_mqtt_client_handle_t client = event->client;
@@ -1549,9 +1541,11 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 
 			msg_id = esp_mqtt_client_unsubscribe(client, "/topic/qos1");
 			ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);*/
+			statusConnectionMQTT = mqttConnected;
 			msg_id = esp_mqtt_client_subscribe(client, topicNameR, 1); //contiene i messaggi provenienti dalla pompa da restituire all app
 		break;
 	case MQTT_EVENT_DISCONNECTED:
+	    statusConnectionMQTT = mqttDisconnected;
 		ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
 		break;
 
@@ -1585,11 +1579,49 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 	}
 	return ESP_OK;
 }
-void  wifi_init(void)
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
+{
+	switch (event->event_id) {
+	case SYSTEM_EVENT_STA_START:
+		esp_wifi_connect();
+		break;
+	case SYSTEM_EVENT_STA_GOT_IP:
+		ESP_LOGI(TAG,
+			"got ip:%s",
+			ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
+		xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+		
+		esp_mqtt_client_start(client);
+		
+		break;
+	case SYSTEM_EVENT_AP_STACONNECTED:
+		ESP_LOGI(TAG,
+			"station:"MACSTR" join, AID=%d",
+			MAC2STR(event->event_info.sta_connected.mac),
+			event->event_info.sta_connected.aid);
+		break;
+	case SYSTEM_EVENT_AP_STADISCONNECTED:
+		ESP_LOGI(TAG,
+			"station:"MACSTR"leave, AID=%d",
+			MAC2STR(event->event_info.sta_disconnected.mac),
+			event->event_info.sta_disconnected.aid);
+			esp_mqtt_client_stop(client);
+		break;
+	case SYSTEM_EVENT_STA_DISCONNECTED:
+		esp_wifi_connect();
+		xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+		break;
+	default:
+		break;
+	}
+	return ESP_OK;
+}
+void  wifi_init(bool intiStatus)
 {
 	tcpip_adapter_init();
 	wifi_event_group = xEventGroupCreate();
-	ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
+	if (intiStatus)//da chiamare sono all'avvio dell esp32
+		ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
 	wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 	ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 	ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
@@ -1600,21 +1632,19 @@ static void wifi_connect(void)
 {
 	
 	setInitNetwork(); //inizializzo le modalita di lavoro della rete, static o dhcp
-	
-	/*wifi_config_t wifi_config = {
-		.sta = {
-		.ssid = CONFIG_WIFI_SSID,
-		.password = CONFIG_WIFI_PASSWORD,
-	},
-	};*/
+/*
+	sprintf((char *)wifi_config.sta.ssid, "ASIA");
+	sprintf((char *)wifi_config.sta.password, "same2600");
+*/	
 	ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 	
 	//ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+	
 	ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-	ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
+	ESP_LOGI(TAG, "start the WIFI SSID:[%s][%s]", wifi_config.sta.ssid, wifi_config.sta.password);
 	ESP_ERROR_CHECK(esp_wifi_start());
 	ESP_LOGI(TAG, "Waiting for wifi");
-	xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+	//xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);//devio torgliere altrimenti si blocca ogni volta aspetta la connessione di rete
 }
 void getIPNetwork(uint8_t * lunghezzTemp)
 {
@@ -1651,7 +1681,90 @@ void getIPNetwork(uint8_t * lunghezzTemp)
 	put32(ip_info.gw.addr, & *lunghezzTemp);
 	put32(dns_info.ip.u_addr.ip4.addr, & *lunghezzTemp);
 }
+void setSerialNumber(uint8_t * arrayTemp)
+{
+	uint8_t i = 4;  //posizione primo carattere della stringa wifi
+	/*
+	//COMANDO che legge il serial number dalla pompa
+	0X46
+	FF 46 00 FE 00 FF B8 // comando lettura serial number dello strumento
+	FF 46 00 FE 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 FF B8 //serial number cifra per cifra in decimale
+	*/
+    for(int j = 0 ; j < 17 ; j++) {
+	    serialNumber[j] = arrayTemp[i + j];
+	}
+	//impostazione dei topic
+		sprintf(topicNameW, "/%s/appW", serialNumber);
+		sprintf(topicNameR, "/%s/appR", serialNumber);
+}
+void setIPNetwork(uint8_t * arrayTemp)
+{
+	
+	uint8_t i = 4; //posizione primo carattere della stringa wifi
+	uint8_t j = 0;
+	
+	/*
+		//COMANDO CHE per impostare i parametri di rete IP, modalita static o DHCP, ip, subnet mask, gateway e dns
+		0X45
+		FF 45 00 FE Type Ip4 Ip3 Ip2 Ip1 SNM4 SNM3 SNM2 SNM1 GTW4 GTW3 GTW2 GTW1 DNS4 DNS3 DNS2 DNS1 FF XX // type:0 DHCP    mode 1: static mode  IP: indirizzo ip SNM: subnet mask GTW: Gateway DNS: dns
+		FF 45 00 FE 01 c0 a8 01 55 ff ff ff 00 c0 a8 01 fb 08 08 08 08 ff eb // IMPOSTAZIONE DI STATIC, CON ip 192.168.1.85 SubNet: 255.255.255.0 Gateway: 192.168.1.251 dns: 8.8.8.8
+		FF 45 00 FE 00 ff bb // IMPOSTAZIONE Dhcp, NON SONO NECESSARI GLI INDIRIZZI ip
+	*/
+	ip.mode = arrayTemp[i];
+	i++;
+	
+	if (ip.mode == 1)// impostazione dello staic mode
+	{
+		tcpip_adapter_ip_info_t ipInfo;
+		tcpip_adapter_dns_info_t dns_info;
 
+		tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);  // blocco il dhcp
+		ip.ip = get32(arrayTemp, &i);
+		ipInfo.ip.addr = ip.ip;
+		ip.subnet = get32(arrayTemp, &i);
+		ipInfo.netmask.addr = ip.subnet;
+		ip.gateway = get32(arrayTemp, &i);
+		ipInfo.gw.addr = ip.gateway;
+		ip.dns = get32(arrayTemp, &i);
+		dns_info.ip.u_addr.ip4.addr = ip.dns;
+		
+		printf("IP Address:  %s\n", ip4addr_ntoa(&ipInfo.ip));
+		printf("Subnet mask: %s\n", ip4addr_ntoa(&ipInfo.netmask));
+		printf("Gateway:     %s\n", ip4addr_ntoa(&ipInfo.gw));
+		printf("DNS:     %s\n", ip4addr_ntoa(&dns_info.ip));
+
+		tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
+		tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info);
+	}
+	else
+	{// impostazione dhcp mode
+		tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_STA);  // Don't run a DHCP client
+	}
+	
+	
+	writeEEpromIP();
+	ESP_ERROR_CHECK(esp_wifi_disconnect());
+	esp_wifi_stop();
+	esp_wifi_deinit();
+	wifi_init(false);
+	wifi_connect();
+	
+
+}
+uint32_t get32(uint8_t * dataIn, uint8_t * lunghezzTemp)
+{	
+	bit32_ ipNum;
+	ipNum.BIT.ad_low = dataIn[*lunghezzTemp];
+	*lunghezzTemp = *lunghezzTemp + 1;
+	ipNum.BIT.ad_low1 = dataIn[*lunghezzTemp];
+	*lunghezzTemp = *lunghezzTemp + 1;
+	ipNum.BIT.ad_high = dataIn[*lunghezzTemp];
+	*lunghezzTemp = *lunghezzTemp + 1;
+	ipNum.BIT.ad_high1 = dataIn[*lunghezzTemp];
+	*lunghezzTemp = *lunghezzTemp + 1;
+
+	return ipNum.value ;
+}
 void put32(uint32_t dataIn, uint8_t * lunghezzTemp)
 {
 	bit32_ ipNum;
@@ -1692,6 +1805,28 @@ void readEEpromData()
 	// Close
 	nvs_close(my_handle);
 }
+void writeEEpromIP()
+{
+	//lettura dati eeprom
+	esp_err_t err;
+	printf("Opening Non-Volatile Storage (NVS) handle... ");
+	nvs_handle my_handle;
+	err = nvs_open("storage", NVS_READWRITE, &my_handle);
+	//nvs_erase_all(&my_handle);
+	if(err != ESP_OK) {
+		printf("Error (%d) opening NVS handle!\n", err);
+	} else {
+		printf("Done\n");
+		size_t size = sizeof(ip);
+		nvs_set_blob(my_handle, "dst_ser_ip", &ip, size);
+	}
+
+	printf("Committing updates in NVS ... ");
+	err = nvs_commit(my_handle);
+	printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+	// Close
+	nvs_close(my_handle);
+}
 void writeEEpromData()
 {
 	//lettura dati eeprom
@@ -1718,6 +1853,7 @@ void writeEEpromData()
 		size_t size1 = sizeof(wifi_config.sta.password);
 		nvs_set_blob(my_handle, "dst_pass_addr", wifi_config.sta.password, size1);
 
+
 	}
 
 	printf("Committing updates in NVS ... ");
@@ -1733,6 +1869,9 @@ void getMACWiFi()
 {
 	uint8_t MAC_addr[6];
 	esp_wifi_get_mac(WIFI_IF_STA, MAC_addr);
+	
+	sprintf((char *)macAddress, "%2X.%2X.%2X.%2X.%2X.%2X", MAC_addr[0], MAC_addr[1], MAC_addr[2], MAC_addr[3], MAC_addr[4], MAC_addr[5]);
+
 	
 }	
 void scanNetworkWiFi(uint8_t * lunghezzTemp)
@@ -1760,7 +1899,7 @@ void scanNetworkWiFi(uint8_t * lunghezzTemp)
 		for (int j = 0; j < strlen((char *)ap_records[i].ssid); j++) {
 			uart_wifi_status[*lunghezzTemp] = ap_records[i].ssid[j];
 			*lunghezzTemp = *lunghezzTemp + 1;
-			printf("costruzione stringa  %d \n", *lunghezzTemp);
+			//printf("costruzione stringa  %d \n", *lunghezzTemp);
 		}
 		uart_wifi_status[*lunghezzTemp] = 0; // zero di suddivisione tra la stringa del AP
 		*lunghezzTemp = *lunghezzTemp + 1;
@@ -1778,13 +1917,11 @@ void setInitNetwork()
 	if (ip.mode == 0) {// DHCP MODE
 		ESP_LOGI(TAG, "system dynamic");
 		tcpip_adapter_dhcpc_start(TCPIP_ADAPTER_IF_STA);   
-
 	}
 	else {
 		//mode static
 		ESP_LOGI(TAG, "system static:%d\n", ip.ip);
 		tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA);  
-
 		tcpip_adapter_ip_info_t ipInfo;
 		tcpip_adapter_dns_info_t dns_info;
 		ipInfo.ip.addr = ip.ip;
@@ -1799,6 +1936,33 @@ void setInitNetwork()
 	}
 
 }
+void getConnectionInfo(uint8_t * lunghezzTemp)
+{
+	wifi_ap_record_t info;
+	uart_wifi_status[*lunghezzTemp] = 0;
+	//FF 44 00 FE 00 FF BA // COMANDO DI RICHIESTA
+		
+	ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&info));
+	
+	if (!esp_wifi_sta_get_ap_info(&info)) {
+		uart_wifi_status[*lunghezzTemp] = abs(info.rssi); // potenza in db positivi del segnale WiFi
+		*lunghezzTemp = *lunghezzTemp + 1;
+	}
+	uart_wifi_status[*lunghezzTemp] = statusConnectionMQTT;
+	*lunghezzTemp = *lunghezzTemp + 1;
+	
+}
+void getSSID(uint8_t * lunghezzTemp)
+{
+	//FF 43 00 FE 00 FF BD FORMATO RICHIESTA ATTUALE SSID
+	//ff 43 00 fe 41 53 49 41 00 ff a7 esempio di risposta con il WiFi dui casa ASIA
+	for (int j = 0; j < strlen((char *)wifi_config.sta.ssid); j++) {
+		uart_wifi_status[*lunghezzTemp] = wifi_config.sta.ssid[j];
+		*lunghezzTemp = *lunghezzTemp + 1;
+	}
+	uart_wifi_status[*lunghezzTemp] = 0;  // zero di suddivisione tra la stringa del AP
+	*lunghezzTemp = *lunghezzTemp + 1;
+}	
 void setSSID(uint8_t * arrayTemp)
 {
 	
@@ -1822,15 +1986,17 @@ void setSSID(uint8_t * arrayTemp)
 		wifi_config.sta.password[j] = arrayTemp[i];
 		i++; j++;
 	}
-	
-	printf("%32s | %62s |\n", (char *)wifi_config.sta.ssid, (char *)wifi_config.sta.password);
+	printf("%s|%s|\n", (char *)wifi_config.sta.ssid, (char *)wifi_config.sta.password);
 	
 	writeEEpromData();
 	ESP_ERROR_CHECK(esp_wifi_disconnect());
+	esp_wifi_stop();
+	esp_wifi_deinit();
+	wifi_init(false);
 	wifi_connect();
 
 }
-static void mqtt_app_start(void)
+static void mqtt_app_init(void)
 {
 	const esp_mqtt_client_config_t mqtt_cfg = {
 		//.uri = "mqtts://iot.eclipse.org:8883",
@@ -1841,15 +2007,17 @@ static void mqtt_app_start(void)
 		 //10 secondi il keep alive, verificare
 	    .username = "emecsrl",
 		.password = "emecsrl",
-		.client_id = serialNumber,
+		//.client_id = serialNumber,
 		  //serialnumber dispositivo
 		.event_handle = mqtt_event_handler,
 		//.cert_pem = (const char *)iot_mosquitto_org_pem_start,
 	};
 
+	sprintf((char*)mqtt_cfg.client_id, "%s", macAddress);
+	
 	ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
-	esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
-	esp_mqtt_client_start(client);
+	client = esp_mqtt_client_init(&mqtt_cfg);
+	//esp_mqtt_client_start(client);
 }
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
@@ -1986,12 +2154,16 @@ void app_main()
 /*
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
+	statusConnectionMQTT = mqttDisconnected;
 	readEEpromData();//leggo i paramtri della rete wifi impostati nella eeprom
+	getMACWiFi();
 	//setInitNetwork();//inizializzo le modalita di lavoro della rete, static o dhcp
 	
-	wifi_init();
-	wifi_connect();
-	mqtt_app_start();
+	wifi_init(true);
+	
+	setSerialNumber(serialNumber);//eliminare questa chiamata quando si sostano le 2 linee di codice successive
+	wifi_connect();//queste 2 linee di codice vanno spostate nella procedura di lettura del serial number, dopo aver letto il serial number mi connetto altrimenti non ha senso
+	mqtt_app_init();
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
