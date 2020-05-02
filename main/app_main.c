@@ -753,7 +753,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 				memcpy(app_uart_write_value, (char *)(p_data->write.value), p_data->write.len);
 				for (int i = 0; i < p_data->write.len; i++)
 				{
-					printf("%x\t", p_data->write.value[i]);
+					printf("%x\t", app_uart_write_value[i]);
 				}
 				printf("\n");
 				app_uart_write_req = true;
@@ -1033,6 +1033,19 @@ void task_principale(void *pvParameters)
 					printf("\n");
 					led_ble_blink(); 																	//segnalo evento su bluetooth
 				}
+/*
+ *START Alvaro Patacchiola WIFi prisma 30/04/2020 p
+*/
+				if (statusConnectionMQTT == mqttConnected)
+				{
+					esp_mqtt_client_publish(client, topicNameR, (char *)temp, len, 0, 0);
+					printf("invio Al Server MQTT");
+					
+				}
+/*
+ *START Alvaro Patacchiola WIFi prisma 30/04/2020 p
+*/
+
 			}
 			memset(temp, 0x00, sizeof(temp)); 															//azzero il buffer temporaneo
 		}
@@ -1263,11 +1276,29 @@ void task_scrittura_uart(void *pvParameters)
 			}
 			else 
 			{
+				/*
+				 *START Alvaro Patacchiola WIFi prisma 30/04/2020 p
+				*/
+#ifdef debug
+				ESP_LOGI(TAG, "485 event send Remote APP Alvaro %d,",app_uart_write_len);
+				gpio_set_level(LED_BLE, 1);
+				uart_write_bytes(UART_NUM_2, (char *)(app_uart_write_value), app_uart_write_len);
+				app_uart_write_len = 0;
+				app_uart_write_req = false;
+				vTaskDelay(200);   //
+				gpio_set_level(LED_BLE, 0);
+				
+#else				
 				uart_write_bytes(UART_NUM_2, (char *)(app_uart_write_value), app_uart_write_len);
 				led_uart_blink();
 				memset(app_uart_write_value, 0x00, sizeof(app_uart_write_value));
 				app_uart_write_len = 0;
 				app_uart_write_req = false;
+#endif				
+				/*
+				 *START Alvaro Patacchiola WIFi prisma 30/04/2020 p
+				*/
+				
 			}
 			tick = 0;
 		}
@@ -1568,8 +1599,20 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 		//esempio
 		const char* found;
 		found = strstr(event->topic, topicNameW);
-		if (found != NULL)
-			msg_id = esp_mqtt_client_publish(client, topicNameR, "risposta", 0, 0, 0);
+	    if (found != NULL)
+	    {
+		    app_uart_write_len = event->data_len;
+		    memcpy(app_uart_write_value, (char *)(event->data), event->data_len);
+		    for (int i = 0; i < event->data_len; i++)
+		    {
+			    printf("%x\t", app_uart_write_value[i]);
+		    }
+		    printf("\n");
+		    
+		    app_uart_write_req = true;
+
+	    }
+			//msg_id = esp_mqtt_client_publish(client, topicNameR, "risposta", 0, 0, 0);
 		printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
 		printf("DATA=%.*s\r\n", event->data_len, event->data);
 		break;
@@ -1683,7 +1726,11 @@ void getIPNetwork(uint8_t * lunghezzTemp)
 }
 void setSerialNumber(uint8_t * arrayTemp)
 {
+#ifdef debug
+	uint8_t i = 0;   //posizione primo carattere della stringa wifi
+#else	
 	uint8_t i = 4;  //posizione primo carattere della stringa wifi
+#endif	
 	/*
 	//COMANDO che legge il serial number dalla pompa
 	0X46
@@ -1865,13 +1912,15 @@ void writeEEpromData()
 	nvs_close(my_handle);
 
 }
-void getMACWiFi()
+char * getMACWiFi()
 {
 	uint8_t MAC_addr[6];
+	
+	
 	esp_wifi_get_mac(WIFI_IF_STA, MAC_addr);
 	
 	sprintf((char *)macAddress, "%2X.%2X.%2X.%2X.%2X.%2X", MAC_addr[0], MAC_addr[1], MAC_addr[2], MAC_addr[3], MAC_addr[4], MAC_addr[5]);
-
+	return macAddress;
 	
 }	
 void scanNetworkWiFi(uint8_t * lunghezzTemp)
@@ -2007,16 +2056,17 @@ static void mqtt_app_init(void)
 		 //10 secondi il keep alive, verificare
 	    .username = "emecsrl",
 		.password = "emecsrl",
-		//.client_id = serialNumber,
+		.client_id = getMACWiFi(),
 		  //serialnumber dispositivo
 		.event_handle = mqtt_event_handler,
 		//.cert_pem = (const char *)iot_mosquitto_org_pem_start,
 	};
 
-	sprintf((char*)mqtt_cfg.client_id, "%s", macAddress);
+	//sprintf((char*)mqtt_cfg.client_id, "%s", macAddress);
 	
 	ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
 	client = esp_mqtt_client_init(&mqtt_cfg);
+	printf("MQTT UID ... %s\n", mqtt_cfg.client_id);
 	//esp_mqtt_client_start(client);
 }
 /*

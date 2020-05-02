@@ -85,7 +85,8 @@ const static int CONNECTED_BIT = BIT0;
 static const char *TAG = "MQTTS_PRISMA";
 //static const char *serialNumber = "00000000000000000";
 uint8_t serialNumber[18] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1',0};
-uint8_t macAddress[18] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+char macAddress[18] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
 //static const char *topicNameW = "/appW";
 char topicNameW[30] = { 0 };
 //static const char *topicNameR = "/appR";
@@ -95,6 +96,7 @@ const int WIFI_CONNECTED_BIT = BIT0;
 
 static ip_ ip;
 esp_mqtt_client_handle_t client;
+
 uint8_t statusConnectionMQTT;	
 
 static void Decodifica_Comando_wifi(uint8_t *);
