@@ -99,7 +99,7 @@ esp_mqtt_client_handle_t client;
 
 uint8_t statusConnectionMQTT;	
 
-static void Decodifica_Comando_wifi(uint8_t *);
+static void Decodifica_Comando_wifi(uint8_t *,uint16_t);
 #define MAX_APs 20
 #define debug // decommentare per hw prisma, usato per testarlo sul hw MDWifi con rs485
 

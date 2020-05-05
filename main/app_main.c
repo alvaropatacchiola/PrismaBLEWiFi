@@ -439,10 +439,11 @@ static bool Verifica_Checksum(uint16_t frame_len, uint8_t frame[frame_len]) {
  *START Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
 
-static void Decodifica_Comando_wifi(uint8_t * arrayTemp)
+static void Decodifica_Comando_wifi(uint8_t * arrayTemp,uint16_t lenArray)
 {
 	uint16_t cmd_code = 0x0000;
 	uint8_t lunghezzaMessaggio = 0;
+	int msg_id=0;
 	memset(uart_wifi_status, 0, sizeUartWiFi);
 	
 	cmd_code += arrayTemp[1];
@@ -475,7 +476,18 @@ static void Decodifica_Comando_wifi(uint8_t * arrayTemp)
 		case 0x4600://lettura del serialNumber dalla pompa
 			setSerialNumber(arrayTemp);
 		break;
-
+		case 0x4700://invio messagi di allarme verso il server
+				if (statusConnectionMQTT == mqttConnected) // se connesso invio il messaggio di allarme al server broker
+					//esp_mqtt_client_subscribe(client, topicNameMail, 1);
+					msg_id = esp_mqtt_client_publish(client, topicNameMail, (char *)arrayTemp, lenArray, 0, 0);
+		
+				if (msg_id > 0)
+					uart_wifi_status[lunghezzaMessaggio] = 1;
+				else
+					uart_wifi_status[lunghezzaMessaggio] = 0;
+			lunghezzaMessaggio++;
+		break;
+			
 	}
 	uart_write_req_id = 0x10; //codici di risposta del wifi
 	uart_wifi_status[lunghezzaMessaggio] = 0xFF;
@@ -1002,7 +1014,7 @@ void task_principale(void *pvParameters)
 					if (temp[1] < 0x3F)
 						Decodifica_Comando(temp[1], temp[2], temp[4], temp[5], temp[6], temp[7]);      		//decodifica il comando
 					else
-						Decodifica_Comando_wifi(temp);       		//decodifica il comando
+						Decodifica_Comando_wifi(temp, len);        		//decodifica il comando
 /*
  *END Alvaro Patacchiola WIFi prisma 23/04/2020 p
 */
@@ -1556,6 +1568,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
 	esp_mqtt_client_handle_t client = event->client;
 	int msg_id;
+	const char* found;
 	// your_context_t *context = event->context;
 	/*
 	 *Per operare in questo modo, l’MQTT segue un paradigma di pubblicazione e sottoscrizione classico, definito “publish and subscribe”, ossia asincrono. Semplificando al massimo la questione: quando il nodo A vuole comunicare con il nodo B, non lo fa in modo sincrono, ovvero come se fosse una telefonata a cui occorre rispondere immediatamente. Al contrario, nel protocollo MQTT il messaggio viene pubblicato dal nodo A (publish) e viene ricevuto dai nodi che sottoscrivono la ricezione del messaggio stesso (subscribe). Sostanzialmente, dunque, con MQTT si disaccoppia fortemente la produzione dalla ricezione del messaggio stesso, anche da un punto di vista temporale*/
@@ -1573,7 +1586,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 			msg_id = esp_mqtt_client_unsubscribe(client, "/topic/qos1");
 			ESP_LOGI(TAG, "sent unsubscribe successful, msg_id=%d", msg_id);*/
 			statusConnectionMQTT = mqttConnected;
-			msg_id = esp_mqtt_client_subscribe(client, topicNameR, 1); //contiene i messaggi provenienti dalla pompa da restituire all app
+			//msg_id = esp_mqtt_client_subscribe(client, topicNameR, 1); //contiene i messaggi provenienti dalla pompa da restituire all app
 		break;
 	case MQTT_EVENT_DISCONNECTED:
 	    statusConnectionMQTT = mqttDisconnected;
@@ -1583,10 +1596,16 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 	case MQTT_EVENT_SUBSCRIBED:
 		//quando sono
 			ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-		msg_id = esp_mqtt_client_publish(client, topicNameR, "connected", 0, 0, 0);
+	    /*found = strstr(event->topic, topicNameMail);
+	    if (found != NULL)// se messaggio mail lo invio al server
+	    {
+		    
+	    }
+	    */
+		//msg_id = esp_mqtt_client_publish(client, topicNameR, "connected", 0, 0, 0);
 		//metodo publish:primoParametro:identificativo, (Topic Name ) stringa che identifica il messaggio da inviare, "data" è proprio il contenuto del messaggio da inviare
 	    
-			ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+			//ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
 		break;
 	case MQTT_EVENT_UNSUBSCRIBED:
 		ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -1597,7 +1616,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 	case MQTT_EVENT_DATA:
 		ESP_LOGI(TAG, "MQTT_EVENT_DATA");
 		//esempio
-		const char* found;
+		
 		found = strstr(event->topic, topicNameW);
 	    if (found != NULL)
 	    {

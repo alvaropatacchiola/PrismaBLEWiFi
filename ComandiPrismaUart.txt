@@ -1,3 +1,8 @@
+
+link utile per calcolare lo xor di n numeri in esadecimale
+
+https://toolslick.com/math/bitwise/xor-calculator
+
 ===========================================================================================================================
 //COMANDO DI RICHIESTA ELENCO RETI
 0X40
@@ -31,4 +36,25 @@ ff 44 00 fe 4f 01 ff f4 // esempio risposta 4F: livello del segnale WiFi 79db(po
 FF 45 00 FE Type Ip4 Ip3 Ip2 Ip1 SNM4 SNM3 SNM2 SNM1 GTW4 GTW3 GTW2 GTW1 DNS4 DNS3 DNS2 DNS1 FF XX // type:0 DHCP    mode 1: static mode  IP: indirizzo ip SNM: subnet mask GTW: Gateway DNS: dns
 FF 45 00 FE 01 c0 a8 01 55 ff ff ff 00 c0 a8 01 fb 08 08 08 08 ff eb // IMPOSTAZIONE DI STATIC, CON ip 192.168.1.85 SubNet: 255.255.255.0 Gateway: 192.168.1.251 dns: 8.8.8.8
 FF 45 00 FE 00 ff bb // IMPOSTAZIONE Dhcp, NON SONO NECESSARI GLI INDIRIZZI ip
+===========================================================================================================================
+//COMANDO per leggere il serial number dalla pompa
+0X46
+FF 46 00 FE 00 FF B8 // comando lettura serial number dello strumento
+FF 46 00 FE 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 FF B8 //serial number cifra per cifra in formato carattere
+===========================================================================================================================
+//COMANDO per invio messaggi di allarme, gestito poi da applicativo vlient che gira su ermes
+0X47
+FF 47 00 FE type mailAddress 00 testoMessaggio 00 FF XX // type:1 Messaggio mail, 2:messagguion telegram  mailAddress: indirizzo nel formato xxxx@xxx.x oppure id both father telegram, testoMessaggio: testo alfanumerico messaggiomail
+FF 47 00 FE 01 61 6c 76 61 72 6f 2e 70 61 74 61 63 63 68 69 6f 6c 61 40 65 6d 65 63 2e 69 74 00 70 72 6f 76 61 20 69 6e 76 69 6f 20 6d 65 73 73 61 67 67 69 6f 00 FF E9 //type: 1 mailAddress:alvaro.patacchiola@emec.it testoMessaggio:prova invio messaggio
+FF 47 00 FE 02 31 31 38 37 35 38 30 37 36 34 3a 41 41 46 41 38 70 64 47 77 67 53 35 61 45 47 51 76 4b 38 5f 32 65 5a 6b 6b 41 76 5f 4f 66 52 74 30 4d 63 00 70 72 6f 76 61 20 69 6e 76 69 6f 20 6d 65 73 73 61 67 67 69 6f 00 FF E2 ////type: 2 telegram botFather :1187580764:AAFA8pdGwgS5aEGQvK8_2eZkkAv_OfRt0Mc testoMessaggio:prova invio messaggio
+ff 47 00 fe 00 ff b9 messaggio di risposta se inviato
+===========================================================================================================================
+esempio richiesto dati inviati dalla APP
+FF 01 00 FE FF FF
+esempio risposta dalla Pompa
+FF 01 00 FE 00 00 00 00 00 00 00 00 00 9C 40 00 00 C3 50 01 01 00 01 86 A0 00 00 00 50 00 0A 00 00 00 00 01 38 80 64 01 01 01 01 01 01 01 01 01 01 00 01 00 00 3A 98 00 00 00 00 00 0C DA 51 00 00 00 E8 D4 A5 0F FF 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 0A 00 2B 00 3B 00 11 00 04 07 E3 00 00 00 00 00 0C DA 51 00 00 00 E8 D4 A5 0F FF 00 00 00 00 FF 58
+
+test effettuato con APP MQTT terminal per IOS
+invio massimo testato 512 Byte
+ricezione massima testata 512 Byte
 ===========================================================================================================================
